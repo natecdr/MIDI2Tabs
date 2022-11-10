@@ -1,3 +1,4 @@
+import traceback
 import numpy as np
 from pretty_midi.containers import TimeSignature
 from app.theory import Measure
@@ -94,9 +95,12 @@ class Tab:
   def gen_tab(self):
     res = {"measures":[]}
 
-    previous_path = []
     previous_start_time = -1
     time_sig_index = -1
+    event_id = 0
+    sequences = [[()]]
+    # sequences_likelihoods = [1]
+    sequences_likelihoods = {():1}
 
     for imeasure, measure in enumerate(self.measures):
       print(f"{imeasure}/{len(self.measures)}")
@@ -114,11 +118,49 @@ class Tab:
           for note in notes:
             note = midi_note_to_note(note)
             note_arrays.append(get_notes_in_graph(self.graph, note))
-
           try:
-            best_path = find_best_path(self.graph, note_arrays, previous_path, start_time, previous_start_time)
+            paths = find_paths(self.graph, note_arrays)
+            print("Number of paths :", len(paths))
+
+            print("Sequence likelihoods :", sequences_likelihoods)
+            new_sequences = []
+            for sequence in sequences:
+              for next_path in paths:
+                new_sequence = sequence.copy()
+                # print(new_sequence)
+                new_sequence.append(next_path)
+                new_sequences.append(new_sequence)
+
+            split_sequences = [new_sequences[x:x+len(sequences)] for x in range(0, len(new_sequences), len(sequences))]
+            sequences = new_sequences
+
+            print("Number of sequences :", len(sequences))
+            print("All sequences :", split_sequences)
+
+            final_sequences = {}
+            new_likelihoods = {}
+            print("Splitted sequences :")
+            for iseq, path_sequences in enumerate(split_sequences):
+              # for seq in path_sequences:
+              #   print(seq)
+
+              next_path_difficulties = [compute_path_difficulty(self.graph, seq[-1], seq[-2] if len(seq) >= 2 else (), start_time, previous_start_time) for seq in path_sequences]
+              next_path_probabilities = [next_path_difficulty/np.sum(next_path_difficulties) for next_path_difficulty in next_path_difficulties]
+              print("Sequence probabilities :", next_path_probabilities)
+              current_likelihoods = {seq[-1]:sequences_likelihoods[seq[-2]] * next_path_probabilities[i] for i, seq in enumerate(path_sequences)}
+              print("Next fingering likelihoods :", current_likelihoods)
+
+              for i, (notes, likelihood) in enumerate(current_likelihoods.items()):
+                print("Max likelihood item :", notes)
+                if notes not in new_likelihoods or likelihood > new_likelihoods[notes]:
+                  final_sequences[notes] = path_sequences[i]
+                  new_likelihoods[notes] = likelihood
+
+            sequences_likelihoods = new_likelihoods
+            sequences = list(final_sequences.values())
+            
           except Exception as e:
-            print(str(e))
+            print(traceback.print_exc())
             print("Note arrays :", note_arrays)
             print("Notes :", notes)
             print(midi_note_to_note(notes[0]))
@@ -130,9 +172,9 @@ class Tab:
             ts = self.time_signatures[time_sig_index]
             ts_change = True
             
-          event = self.build_event(start_time, start_time_ticks, timing, best_path, ts, ts_change)
+          event = self.build_event(start_time, start_time_ticks, timing, ts, ts_change, event_id)
+          event_id += 1
 
-          previous_path = best_path
           previous_start_time = start_time
 
         res_measure["events"].append(event)
@@ -141,8 +183,27 @@ class Tab:
 
     self.tab = res
 
-  def build_event(self, start_time, start_time_ticks, timing, best_path, ts, ts_change):
-    event = {"time":start_time,
+    final_sequence = sequences[np.argmin(sequences_likelihoods.values())]
+    final_sequence.pop(0)
+    self.populate_tab_notes(final_sequence)
+    
+  def populate_tab_notes(self, sequence):
+    ievent = 0
+    for measure in self.tab["measures"]:
+      for ievent, event in enumerate(measure["events"]):
+        for path_note in sequence[ievent]:
+          string, fret = self.graph.nodes[path_note]["pos"]   
+          event["notes"].append({
+            "degree": str(path_note.degree),
+            "octave": int(path_note.octave),
+            "string": string,
+            "fret": fret
+            })
+        ievent += 1
+
+  def build_event(self, start_time, start_time_ticks, timing, ts, ts_change, event_id):
+    event = {"id" : event_id,
+            "time":start_time,
             "measure_timing":None,
             "time_ticks":start_time_ticks,
             "notes":[]}
@@ -151,15 +212,6 @@ class Tab:
       event["time_signature_change"] = [ts.numerator, ts.denominator]
 
     event["measure_timing"] = timing/ts.numerator
-
-    for path_note in best_path:
-      string, fret = self.graph.nodes[path_note]["pos"]   
-      event["notes"].append({
-        "degree": str(path_note.degree),
-        "octave": int(path_note.octave),
-        "string": string,
-        "fret": fret
-        })
 
     return event
 

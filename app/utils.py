@@ -58,8 +58,8 @@ def get_all_possible_notes(tuning, nfrets = 20): #Returns all possible_notes on 
   return res
 
 def distance_between(x, y, string_spacing_mm = 3.5): #Computes the distance between two points (tuples) according to guitar math
-  x = (x[0] * string_spacing_mm, get_fret_distance(x[1]))
-  y = (y[0] * string_spacing_mm, get_fret_distance(y[1]))
+  # x = (x[0] * string_spacing_mm, get_fret_distance(x[1]))
+  # y = (y[0] * string_spacing_mm, get_fret_distance(y[1]))
   return math.dist(x,y)
 
 def get_fret_distance(nfret, scale_length = 650):
@@ -100,18 +100,22 @@ def is_edge_possible(possible_note, possible_target_note, G):
   is_different_string = G.nodes[possible_note]["pos"][0] != G.nodes[possible_target_note]["pos"][0]
   return is_distance_possible and is_different_string
 
-def find_paths(G, path_graph, note_arrays, already_checked): #Returns all possible paths in a path graph
+def find_paths(G, note_arrays): #Returns all possible paths in a path graph
   paths = []
-  for possible_source_node in note_arrays[0]:
-    for possible_target_node in note_arrays[-1]: 
-      try:
-        path = nx.shortest_path(path_graph, possible_source_node, possible_target_node, weight = "distance")
-        if not is_path_already_checked(already_checked, path) and is_path_possible(G, path, note_arrays):
-          paths.append(path)
-      except nx.NetworkXNoPath:
-        pass
-        #print("No path ???")
-        #display_path_graph(path_graph)
+
+  for note_arrays_permutation in list(itertools.permutations(note_arrays)):
+    path_graph = build_path_graph(G, note_arrays_permutation)
+    # display_path_graph(path_graph)
+    for possible_source_node in note_arrays_permutation[0]:
+      for possible_target_node in note_arrays_permutation[-1]: 
+        try:
+          path = nx.shortest_path(path_graph, possible_source_node, possible_target_node, weight = "distance")
+          if not is_path_already_checked(paths, path) and is_path_possible(G, path, note_arrays_permutation):
+            paths.append(tuple(path))
+        except nx.NetworkXNoPath:
+          pass
+          #print("No path ???")
+          #display_path_graph(path_graph)
 
   return paths
 
@@ -139,13 +143,7 @@ def is_path_possible(G, path, note_arrays):
   return possible
 
 def find_best_path(G, note_arrays, previous_path, start_time, previous_start_time): #Returns the path that best matches the distance_length constraints
-  paths = []
-
-  for note_arrays_permutation in list(itertools.permutations(note_arrays)):
-    path_graph = build_path_graph(G, note_arrays_permutation)
-    # display_path_graph(path_graph)
-
-    paths += find_paths(G, path_graph, note_arrays_permutation, paths)
+  paths = find_paths(G, note_arrays)
 
   path_scores = [compute_path_difficulty(G, path, previous_path, start_time, previous_start_time) for path in paths]
   best_path = paths[np.argmin(path_scores)]
@@ -246,3 +244,4 @@ def quantize(midi):
             quantized_notes.append(pretty_midi.Note(velocity = note.velocity, pitch = note.pitch, start = midi.tick_to_time(rounded), end=note.end))
 
         instrument.notes = quantized_notes
+      
