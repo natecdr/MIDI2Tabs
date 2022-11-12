@@ -77,6 +77,7 @@ class Tab:
         if "notes" in event:  
           for note in event["notes"]:
             string, fret = note["string"], note["fret"]
+            print(fret)
             res[string] += str(fret)
 
         next_event_timing = measure["events"][ievent + 1]["measure_timing"] if ievent < len(measure["events"]) - 1 else 1.0
@@ -107,6 +108,7 @@ class Tab:
       res_measure = {"events":[]}
 
       all_notes = measure.get_all_notes()
+      # print(all_notes)
 
       for timing, notes in all_notes.items():
         ts_change = False
@@ -120,9 +122,7 @@ class Tab:
             note_arrays.append(get_notes_in_graph(self.graph, note))
           try:
             paths = find_paths(self.graph, note_arrays)
-            print("Number of paths :", len(paths))
 
-            print("Sequence likelihoods :", sequences_likelihoods)
             new_sequences = []
             for sequence in sequences:
               for next_path in paths:
@@ -134,24 +134,14 @@ class Tab:
             split_sequences = [new_sequences[x:x+len(sequences)] for x in range(0, len(new_sequences), len(sequences))]
             sequences = new_sequences
 
-            print("Number of sequences :", len(sequences))
-            print("All sequences :", split_sequences)
-
             final_sequences = {}
             new_likelihoods = {}
-            print("Splitted sequences :")
             for iseq, path_sequences in enumerate(split_sequences):
-              # for seq in path_sequences:
-              #   print(seq)
-
-              next_path_difficulties = [compute_path_difficulty(self.graph, seq[-1], seq[-2] if len(seq) >= 2 else (), start_time, previous_start_time) for seq in path_sequences]
+              next_path_difficulties = [1/compute_path_difficulty(self.graph, seq[-1], seq[-2] if len(seq) >= 2 else (), start_time, previous_start_time) for seq in path_sequences]
               next_path_probabilities = [next_path_difficulty/np.sum(next_path_difficulties) for next_path_difficulty in next_path_difficulties]
-              print("Sequence probabilities :", next_path_probabilities)
               current_likelihoods = {seq[-1]:sequences_likelihoods[seq[-2]] * next_path_probabilities[i] for i, seq in enumerate(path_sequences)}
-              print("Next fingering likelihoods :", current_likelihoods)
 
               for i, (notes, likelihood) in enumerate(current_likelihoods.items()):
-                print("Max likelihood item :", notes)
                 if notes not in new_likelihoods or likelihood > new_likelihoods[notes]:
                   final_sequences[notes] = path_sequences[i]
                   new_likelihoods[notes] = likelihood
@@ -186,11 +176,11 @@ class Tab:
     final_sequence = sequences[np.argmin(sequences_likelihoods.values())]
     final_sequence.pop(0)
     self.populate_tab_notes(final_sequence)
-    
+
   def populate_tab_notes(self, sequence):
     ievent = 0
     for measure in self.tab["measures"]:
-      for ievent, event in enumerate(measure["events"]):
+      for event in measure["events"]:
         for path_note in sequence[ievent]:
           string, fret = self.graph.nodes[path_note]["pos"]   
           event["notes"].append({

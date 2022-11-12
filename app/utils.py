@@ -98,7 +98,8 @@ def build_path_graph(G, note_arrays): #Returns a path graph corresponding to all
 def is_edge_possible(possible_note, possible_target_note, G):
   is_distance_possible = G[possible_note][possible_target_note]["distance"] < 165
   is_different_string = G.nodes[possible_note]["pos"][0] != G.nodes[possible_target_note]["pos"][0]
-  return is_distance_possible and is_different_string
+  # return is_distance_possible and is_different_string
+  return True
 
 def find_paths(G, note_arrays): #Returns all possible paths in a path graph
   paths = []
